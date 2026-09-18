@@ -1,0 +1,729 @@
+app:
+  description: 优化前的原始版本（自动备份，可用于回滚）
+  icon: 🩺
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 医疗 AI-Workflow Demo（原始备份）
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    opening_statement: ''
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      voice: ''
+      language: ''
+    speech_to_text:
+      enabled: false
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      enabled: false
+      allowed_file_types:
+      - image
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      number_limits: 3
+      fileUploadConfig:
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 20
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        audio_file_size_limit: 50
+        workflow_file_upload_limit: 10
+        image_file_batch_limit: 10
+        single_chunk_attachment_limit: 10
+        attachment_image_file_size_limit: 2
+  graph:
+    nodes:
+    - id: '1789701108461'
+      type: custom
+      data:
+        variables:
+        - variable: user_input
+          label: 用户输入对话
+          type: text-input
+          required: true
+          options: []
+          placeholder: ''
+          default: ''
+          hint: ''
+          max_length: 256
+        type: start
+        title: 用户输入医疗问题/症状
+        selected: false
+      position:
+        x: -133.99999410575685
+        y: 268.0000003856047
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: -133.99999410575685
+        y: 268.0000003856047
+      width: 242
+      height: 108
+      selected: false
+    - id: '1789701353677'
+      type: custom
+      data:
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.7
+        prompt_template:
+        - role: system
+          text: 将用户输入的{{#1789701108461.user_input#}}进行信息提取，并整理主要内容，主要提取用户的主诉症状。并对用户会话内容进行判断若为闲聊内容则输出闲聊，若为（胸闷/呼吸困难/大出血/意识丧失）则输出危急症状，其余症状则返回该症状的具体描述。
+          id: f906fb6b-3a4b-4cc9-bfc7-6e55bb6f36da
+        context:
+          enabled: true
+          variable_selector:
+          - '1789701108461'
+          - user_input
+        vision:
+          enabled: false
+        type: llm
+        title: 会话初始化/提取变量
+        selected: false
+        structured_output_enabled: true
+      position:
+        x: 154.00000627984798
+        y: 230.00000143224605
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 154.00000627984798
+        y: 230.00000143224605
+      width: 242
+      height: 87
+      selected: false
+    - id: '1789701830696'
+      type: custom
+      data:
+        outputs:
+        - variable: output
+          value_selector:
+          - '1789702028931'
+          - result_1
+          value_type: string
+        type: end
+        title: 特殊情况结果输出
+        selected: false
+        desc: 紧急拒答输出/闲聊输出
+      position:
+        x: 1059
+        y: 107.00000672053906
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1059
+        y: 107.00000672053906
+      width: 242
+      height: 116
+      selected: false
+    - id: '1789702028931'
+      type: custom
+      data:
+        code: "\ndef symptom_branch(main_symptom):\n    raw_input = main_symptom\n    result = \"\"\n    critical_set = {\"胸闷\", \"呼吸困难\", \"大出血\", \"意识丧失\"}\n\n    if main_symptom == \"闲聊\":\n        result = \"你好，我是医疗AI-workflow小助手，本平台暂不支持闲聊功能，敬请谅解。\"\n    elif main_symptom in critical_set:\n        result = \"立即拨打120，就近急\"\n    else:\n        result = main_symptom\n\n    return result, raw_input\n\n\nif __name__ == \"__main__\":\n    test_cases = [\n        \"闲聊\",\n        \"胸闷\",\n        \"咳嗽咳痰\",\n        \"意识丧失\",\n        \"头痛头晕\"\n    ]\n    for case in test_cases:\n        res, raw = symptom_branch(case)\n        print(f\"原始输入:{raw} → result:{res}\")\n"
+        code_language: python3
+        variables:
+        - variable: user_input
+          value_selector:
+          - '1789701353677'
+          - text
+          value_type: string
+        outputs:
+          raw_input:
+            type: string
+            children: null
+          result_1:
+            type: string
+            children: null
+        type: code
+        title: 变量转化
+        selected: false
+        retry_config:
+          retry_enabled: true
+          max_retries: 3
+          retry_interval: 1000
+      position:
+        x: 443.18921167898407
+        y: 230.00000143224605
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 443.18921167898407
+        y: 230.00000143224605
+      width: 242
+      height: 81
+      selected: false
+    - id: '1789702048795'
+      type: custom
+      data:
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: f728c4a2-5799-4d8d-a4b0-15867e42ea7a
+            varType: string
+            variable_selector:
+            - '1789702028931'
+            - raw_input
+            comparison_operator: contains
+            value: 闲聊
+        - id: c550ab60-a0e2-44a3-b1fd-204415103948
+          case_id: c550ab60-a0e2-44a3-b1fd-204415103948
+          logical_operator: and
+          conditions:
+          - id: 29a38f7f-df2a-4659-98a7-823590b8f97a
+            varType: string
+            variable_selector:
+            - '1789702028931'
+            - raw_input
+            comparison_operator: contains
+            value: ' "闲聊", "胸闷", "咳嗽咳痰", "意识丧失", "头痛头晕" '
+        type: if-else
+        title: 特殊情况判断
+        selected: false
+      position:
+        x: 724.0000007161232
+        y: 177.00000672053903
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 724.0000007161232
+        y: 177.00000672053903
+      width: 242
+      height: 219
+      selected: false
+    - id: '1789703570246'
+      type: custom
+      data:
+        query_variable_selector:
+        - '1789702028931'
+        - result_1
+        query_attachment_selector: []
+        dataset_ids:
+        - afbc55b0-9cd4-40c5-a0af-955ef0761b55
+        - 431c1323-3b9e-4fce-ad85-3133d8f9a101
+        - bc8d50c4-ae1c-474e-93a2-239661ce92b4
+        - 2b020888-f035-43d6-86ce-6640f2a756d7
+        retrieval_mode: multiple
+        multiple_retrieval_config:
+          top_k: 4
+          reranking_mode: reranking_model
+          reranking_model:
+            provider: langgenius/tongyi/tongyi
+            model: qwen3-rerank
+          reranking_enable: false
+        type: knowledge-retrieval
+        title: 病例知识检索
+        selected: false
+      position:
+        x: 1059
+        y: 259.62159250691093
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1059
+        y: 259.62159250691093
+      width: 242
+      height: 173
+      selected: false
+    - id: '1789703624115'
+      type: custom
+      data:
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: efa8d41c-5f90-4f07-9427-175c0c0ce1a8
+            varType: array[object]
+            variable_selector:
+            - '1789703570246'
+            - result
+            comparison_operator: empty
+            value: ''
+        type: if-else
+        title: 病例知识召回结果判断
+        selected: false
+      position:
+        x: 1361
+        y: 259.62159250691093
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1361
+        y: 259.62159250691093
+      width: 242
+      height: 123
+      selected: false
+    - id: '1789703764133'
+      type: custom
+      data:
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.7
+        prompt_template:
+        - role: system
+          text: '提取信息，并判断该信息类型，并汇总为三类：1.疾病症断、开药、病例解读。2.医院业务查询：挂号/缴费/报告查询。3.模糊发杂问题、罕见病、超出知识库信息。
+
+
+            {{#context#}}'
+          id: b31db9d1-460d-428e-a65c-2db130518a2b
+        context:
+          enabled: true
+          variable_selector:
+          - '1789703570246'
+          - result
+        vision:
+          enabled: false
+        type: llm
+        title: 问题类型提取
+        selected: false
+        structured_output_enabled: true
+        retry_config:
+          retry_enabled: true
+          max_retries: 3
+          retry_interval: 1000
+      position:
+        x: 1652.2971360386732
+        y: 164.48502396178446
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1652.2971360386732
+        y: 164.48502396178446
+      width: 242
+      height: 117
+      selected: false
+    - id: '1789704222762'
+      type: custom
+      data:
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 5653aeae-31e1-43a3-b7a6-83e8670b434b
+            varType: string
+            variable_selector:
+            - '1789703764133'
+            - text
+            comparison_operator: contains
+            value: 疾病症断、开药、病例解读。
+        - id: 614a9327-6099-4992-9b37-0ae55bb1c42c
+          case_id: 614a9327-6099-4992-9b37-0ae55bb1c42c
+          logical_operator: and
+          conditions:
+          - id: cd5d95d3-43db-443b-bc9f-9cfe00aceede
+            varType: string
+            variable_selector:
+            - '1789703764133'
+            - text
+            comparison_operator: contains
+            value: 医院业务查询：挂号/缴费/报告查询。
+        type: if-else
+        title: 问题类型判断分支
+        selected: false
+      position:
+        x: 2222.2971360386728
+        y: 74.48502396178449
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 2222.2971360386728
+        y: 74.48502396178449
+      width: 242
+      height: 219
+      selected: false
+    - id: '1789704401553'
+      type: custom
+      data:
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.7
+        prompt_template:
+        - role: system
+          text: 根据内容输出科普解释、科室建议、检查项目、强制增加免责声明。
+          id: 7121f597-a3c8-4b9c-99c5-602b9353b564
+        context:
+          enabled: true
+          variable_selector:
+          - '1789703570246'
+          - result
+        vision:
+          enabled: false
+        type: llm
+        title: LLM大模型调用
+        selected: false
+        structured_output_enabled: true
+        retry_config:
+          retry_enabled: true
+          max_retries: 3
+          retry_interval: 1000
+      position:
+        x: 1585.2971360386732
+        y: 476.4850239617844
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1585.2971360386732
+        y: 476.4850239617844
+      width: 242
+      height: 117
+      selected: false
+    - id: '1789704631683'
+      type: custom
+      data:
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.7
+        prompt_template:
+        - role: system
+          text: LLM审查输出是否含症断/开药表述。输出违规或者合规
+          id: 1526523e-c3b1-40d1-8918-21eda27c35cd
+        context:
+          enabled: true
+          variable_selector:
+          - '1789704401553'
+          - text
+        vision:
+          enabled: false
+        type: llm
+        title: 二次安全校检提取
+        selected: false
+      position:
+        x: 1887.2971360386732
+        y: 476.4850239617844
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1887.2971360386732
+        y: 476.4850239617844
+      width: 242
+      height: 87
+      selected: false
+    - id: '1789704695407'
+      type: custom
+      data:
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 6d6db115-aa9b-496a-ae21-f5415cd6d775
+            varType: string
+            variable_selector:
+            - '1789704631683'
+            - text
+            comparison_operator: contains
+            value: 合规
+        type: if-else
+        title: 二次安全校检分支
+        selected: false
+      position:
+        x: 2189.297136038673
+        y: 476.4850239617844
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 2189.297136038673
+        y: 476.4850239617844
+      width: 242
+      height: 123
+      selected: false
+    - id: '1789704810654'
+      type: custom
+      data:
+        outputs:
+        - variable: end
+          value_selector:
+          - '1789704829513'
+          - result
+          value_type: string
+        type: end
+        title: 模型直接拒绝回答
+        selected: true
+      position:
+        x: 2623.297136038673
+        y: 74.48502396178449
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 2623.297136038673
+        y: 74.48502396178449
+      width: 242
+      height: 88
+      selected: true
+    - id: '1789704829513'
+      type: custom
+      data:
+        code: "\ndef query_classify(query_type):\n    raw_input = query_type\n    result = \"\"\n    if query_type in {\"疾病诊断\", \"开药\", \"病例解读\"}:\n        result = \"无法提供诊疗，建议结束。\"\n    elif query_type in {\"医院业务查询：挂号/缴费/报告查询\"}:\n        result = \"工具调用\"\n    elif query_type in {\"模糊复杂问题\", \"罕见病\", \"超出知识库信息\"}:\n        result = \"转人工\"\n    else:\n        result = \"转人工\"\n    return result,raw_input\n\n\nif __name__ == \"__main__\":\n    test_list = [\n        \"疾病诊断\",\n        \"开药\",\n        \"病例解读\",\n        \"医院业务查询：挂号/缴费/报告查询\",\n        \"模糊复杂问题\",\n        \"罕见病\",\n        \"超出知识库信息\",\n        \"未知输入\"\n    ]\n    for t in test_list:\n        res, raw = query_classify(t)\n        print(f\"输入:{raw} → result:{res}\")\n"
+        code_language: python3
+        variables:
+        - variable: arg1
+          value_selector:
+          - '1789703764133'
+          - text
+          value_type: string
+        outputs:
+          result:
+            type: string
+            children: null
+        type: code
+        title: 代码执行 2
+        selected: false
+      position:
+        x: 1941.2971360386732
+        y: 206.48502396178455
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1941.2971360386732
+        y: 206.48502396178455
+      width: 242
+      height: 51
+      selected: false
+    edges:
+    - id: 1789701108461-source-1789701353677-target
+      type: custom
+      source: '1789701108461'
+      sourceHandle: source
+      target: '1789701353677'
+      targetHandle: target
+      data:
+        sourceType: start
+        targetType: llm
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789701353677-source-1789702028931-target
+      type: custom
+      source: '1789701353677'
+      sourceHandle: source
+      target: '1789702028931'
+      targetHandle: target
+      data:
+        sourceType: llm
+        targetType: code
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789702028931-source-1789702048795-target
+      type: custom
+      source: '1789702028931'
+      sourceHandle: source
+      target: '1789702048795'
+      targetHandle: target
+      data:
+        sourceType: code
+        targetType: if-else
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789702048795-true-1789701830696-target
+      type: custom
+      source: '1789702048795'
+      target: '1789701830696'
+      sourceHandle: 'true'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: end
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789702048795-c550ab60-a0e2-44a3-b1fd-204415103948-1789701830696-target
+      type: custom
+      source: '1789702048795'
+      target: '1789701830696'
+      sourceHandle: c550ab60-a0e2-44a3-b1fd-204415103948
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: end
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789702048795-false-1789703570246-target
+      type: custom
+      source: '1789702048795'
+      sourceHandle: 'false'
+      target: '1789703570246'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: knowledge-retrieval
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789703570246-source-1789703624115-target
+      type: custom
+      source: '1789703570246'
+      sourceHandle: source
+      target: '1789703624115'
+      targetHandle: target
+      data:
+        sourceType: knowledge-retrieval
+        targetType: if-else
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789703624115-true-1789703764133-target
+      type: custom
+      source: '1789703624115'
+      sourceHandle: 'true'
+      target: '1789703764133'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: llm
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789703624115-false-1789704401553-target
+      type: custom
+      source: '1789703624115'
+      sourceHandle: 'false'
+      target: '1789704401553'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: llm
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789704401553-source-1789704631683-target
+      type: custom
+      source: '1789704401553'
+      sourceHandle: source
+      target: '1789704631683'
+      targetHandle: target
+      data:
+        sourceType: llm
+        targetType: llm
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789704631683-source-1789704695407-target
+      type: custom
+      source: '1789704631683'
+      sourceHandle: source
+      target: '1789704695407'
+      targetHandle: target
+      data:
+        sourceType: llm
+        targetType: if-else
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789704222762-true-1789704810654-target
+      type: custom
+      source: '1789704222762'
+      sourceHandle: 'true'
+      target: '1789704810654'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: end
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789703764133-source-1789704829513-target
+      type: custom
+      source: '1789703764133'
+      sourceHandle: source
+      target: '1789704829513'
+      targetHandle: target
+      data:
+        sourceType: llm
+        targetType: code
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789704829513-source-1789704222762-target
+      type: custom
+      source: '1789704829513'
+      target: '1789704222762'
+      sourceHandle: source
+      targetHandle: target
+      data:
+        sourceType: code
+        targetType: if-else
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1789703764133-source-1789704222762-target
+      type: custom
+      source: '1789703764133'
+      target: '1789704222762'
+      sourceHandle: source
+      targetHandle: target
+      data:
+        sourceType: llm
+        targetType: if-else
+        isInLoop: false
+      zIndex: 0
+    - id: 1789704695407-false-1789704810654-target
+      type: custom
+      source: '1789704695407'
+      target: '1789704810654'
+      sourceHandle: 'false'
+      targetHandle: target
+      data:
+        sourceType: if-else
+        targetType: end
+        isInLoop: false
+      zIndex: 0
+    viewport:
+      x: 40.80792501206713
+      y: 263.4341605165246
+      zoom: 0.25

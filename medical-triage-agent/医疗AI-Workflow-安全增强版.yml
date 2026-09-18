@@ -1,0 +1,1379 @@
+app:
+  description: 面向医院导诊场景的医疗 AI 工作流：PII 脱敏 → 危急信号双重校验 → 五路意图路由 → 知识库/工具调用/转人工，全链路合规兜底。
+  icon: 🩺
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 医疗 AI-Workflow Demo（安全增强版）
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    opening_statement: ''
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      voice: ''
+      language: ''
+    speech_to_text:
+      enabled: false
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      enabled: false
+      allowed_file_types:
+      - image
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      number_limits: 3
+      fileUploadConfig:
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 20
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        audio_file_size_limit: 50
+        workflow_file_upload_limit: 10
+        image_file_batch_limit: 10
+        single_chunk_attachment_limit: 10
+        attachment_image_file_size_limit: 2
+  graph:
+    nodes:
+    - id: '1790000000001'
+      type: custom
+      data:
+        title: ① 用户输入（入口）
+        desc: 接收用户症状描述；可选填写背景信息，用于更精准的科室建议
+        variables:
+        - variable: user_input
+          label: 请描述您的症状或问题
+          type: text-input
+          required: true
+          max_length: 512
+          options: []
+          placeholder: 例如：最近三天咳嗽有黄痰，晚上更明显，应该挂哪个科？
+          default: ''
+          hint: 描述越具体，导诊建议越准确
+        - variable: user_context
+          label: 补充信息（选填）
+          type: text-input
+          required: false
+          max_length: 256
+          options: []
+          placeholder: 例如：年龄 35 岁，有高血压，正在长期服药
+          default: ''
+          hint: 年龄、基础疾病、正在服用的药物，会显著影响科室建议
+        type: start
+        selected: false
+      position:
+        x: 480
+        y: 40
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 480
+        y: 40
+      width: 244
+      height: 160
+      selected: false
+    - id: '1790000000002'
+      type: custom
+      data:
+        title: ② 安全前置：PII 脱敏 + 危急信号初筛
+        desc: 正则脱敏手机号/身份证/卡号等敏感信息；用医学规则库做高召回初筛（宁可误报，不可漏报）
+        code_language: python3
+        code: "\nimport re\n\n# 危急信号规则库 —— 高召回优先：宁可误报，交给后续 LLM 复核降误报，\n# 但绝不能漏掉真实的危急情况。\nCRITICAL_RULES = [\n    (\"急性胸痛\",   [\"胸痛\", \"胸口痛\", \"心口痛\", \"压榨性疼痛\", \"胸闷压榨\"]),\n    (\"呼吸困难\",   [\"呼吸困难\", \"喘不上气\", \"喘不过气\", \"憋气\", \"窒息\", \"气促\", \"呼吸急促\"]),\n    (\"意识障碍\",   [\"意识丧失\", \"昏迷\", \"晕厥\", \"晕倒\", \"叫不醒\", \"意识模糊\", \"抽搐\", \"惊厥\"]),\n    (\"大出血\",     [\"大出血\", \"呕血\", \"咯血\", \"大量出血\", \"血崩\", \"血流不止\"]),\n    (\"神经急症\",   [\"口角歪斜\", \"半身不遂\", \"偏瘫\", \"言语不清\", \"中风\", \"瘫痪\", \"肢体麻木无力\"]),\n    (\"消化道出血\", [\"黑便\", \"柏油样便\", \"便血\", \"血便\"]),\n    (\"中毒或过量\", [\"农药\", \"误服\", \"中毒\", \"药物过量\", \"安眠药\", \"吃错药\"]),\n    (\"自伤风险\",   [\"自杀\", \"轻生\", \"不想活\", \"结束生命\", \"活不下去\"]),\n    (\"严重外伤\",   [\"车祸\", \"坠落\", \"摔到头\", \"撞击头部\", \"骨折\", \"大出血伤口\"]),\n    (\"产科急症\",   [\"羊水\", \"见红\", \"胎动消失\", \"临产\", \"孕期出血\"]),\n    (\"儿科危重\",   [\"高热惊厥\", \"新生儿\", \"婴儿\", \"小儿抽搐\"]),\n    (\"急腹症\",     [\"剧烈腹痛\", \"腹部剧痛\", \"板状腹\", \"肚子硬\"]),\n    (\"超高热\",     [\"40度\", \"41度\", \"42度\", \"高热不退\"]),\n]\n\n# 否定/假设/既往语境 —— 用于降低误报\nNEGATIONS = [\"没有\", \"没\", \"不\", \"无\", \"未\", \"否认\", \"不是\", \"不会\", \"从不\"]\nHISTORY_HINTS = [\"以前\", \"曾经\", \"既往\", \"三年前\", \"几年前\", \"去年\", \"病史\", \"做过\", \"得过\"]\nQUESTION_HINTS = [\"是什么\", \"什么原因\", \"怎么回事\", \"会怎样\", \"严不严重\", \"是不是\"]\n\n\ndef main(user_input: str) -> dict:\n    raw = user_input or \"\"\n\n    # ---------- 1. PII 脱敏 ----------\n    masked = []\n    text = raw\n    text, n = re.subn(r\"1[3-9]\\d{9}\", \"[手机号已脱敏]\", text)\n    if n:\n        masked.append(\"手机号x%d\" % n)\n    text, n = re.subn(r\"\\d{17}[\\dXx]\", \"[身份证已脱敏]\", text)\n    if n:\n        masked.append(\"身份证x%d\" % n)\n    text, n = re.subn(r\"[\\w.\\-]+@[\\w\\-]+\\.[\\w.]+\", \"[邮箱已脱敏]\", text)\n    if n:\n        masked.append(\"邮箱x%d\" % n)\n    text, n = re.subn(r\"\\d{16,19}\", \"[卡号已脱敏]\", text)\n    if n:\n        masked.append(\"银行卡/卡号x%d\" % n)\n    text, n = re.subn(r\"(?:病历号|住院号|门诊号|就诊卡号)[:：]?\\s*[A-Za-z0-9\\-]{4,}\", \"[就诊编号已脱敏]\", text)\n    if n:\n        masked.append(\"就诊编号x%d\" % n)\n\n    # ---------- 2. 危急信号规则初筛 ----------\n    hits = []\n    for label, keywords in CRITICAL_RULES:\n        for kw in keywords:\n            start = text.find(kw)\n            while start != -1:\n                prefix = text[max(0, start - 5):start]\n                tail = text[start + len(kw): start + len(kw) + 8]\n                denied = any(neg in prefix for neg in NEGATIONS)\n                historical = any(h in prefix for h in HISTORY_HINTS)\n                asking = any(h in tail for h in QUESTION_HINTS)\n                if not (denied or historical or asking):\n                    hits.append(\"%s(%s)\" % (label, kw))\n                    break\n                start = text.find(kw, start + 1)\n\n    hit_text = \"、\".join(hits) if hits else \"无\"\n\n    return {\n        \"clean_input\": text.strip(),\n        \"is_emergency_hit\": \"是\" if hits else \"否\",\n        \"hit_keywords\": hit_text,\n        \"pii_masked\": (\"、\".join(masked)) if masked else \"无\",\n    }\n"
+        variables:
+        - variable: user_input
+          value_selector:
+          - '1790000000001'
+          - user_input
+          value_type: string
+        outputs:
+          clean_input:
+            type: string
+            children: null
+          is_emergency_hit:
+            type: string
+            children: null
+          hit_keywords:
+            type: string
+            children: null
+          pii_masked:
+            type: string
+            children: null
+        retry_config:
+          retry_enabled: true
+          max_retries: 2
+          retry_interval: 1000
+        type: code
+        selected: false
+      position:
+        x: 480
+        y: 250
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 480
+        y: 250
+      width: 244
+      height: 130
+      selected: false
+    - id: '1790000000003'
+      type: custom
+      data:
+        title: ③ 是否命中危急信号
+        desc: 规则层判断：命中则进入 LLM 精确复核，未命中走正常导诊流程
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 4051e855-db58-41d8-8dfc-c5de9ee5f554
+            varType: string
+            variable_selector:
+            - '1790000000002'
+            - is_emergency_hit
+            comparison_operator: contains
+            value: 是
+        type: if-else
+        selected: false
+      position:
+        x: 480
+        y: 430
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 480
+        y: 430
+      width: 245
+      height: 140
+      selected: false
+    - id: '1790000000004'
+      type: custom
+      data:
+        title: ④ 危急复核（LLM 精确判定）
+        desc: 消除规则层的误报：剔除否定、假设、既往史语境，判断当前是否真的危急
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen-plus
+          mode: chat
+          completion_params:
+            temperature: 0.1
+        prompt_template:
+        - role: system
+          text: '你是医疗分诊体系里的“安全复核员”。规则引擎从用户描述中命中了以下危急信号：
+
+
+            【命中信号】{{#1790000000002.hit_keywords#}}
+
+            【用户原话（已脱敏）】{{#1790000000002.clean_input#}}
+
+
+            规则引擎的职责是“宁可误报不可漏报”，所以现在需要你做精确复核：在剔除否定、假设、既往史语境之后，用户当前是否真的存在需要立即急诊的危重情况。
+
+
+            【判为危急】满足任一即可：
+
+            1. 正在发生或刚刚发生的急性重症表现：压榨性胸痛、呼吸困难或窒息感、意识丧失或昏迷、大量出血、偏瘫或口角歪斜或言语不清、抽搐、剧烈腹痛；
+
+            2. 明确的自我伤害念头（自杀、轻生）；
+
+            3. 中毒、误服、药物过量；
+
+            4. 孕产妇或婴幼儿的急性危重表现（孕期出血、胎动消失、高热惊厥等）。
+
+
+            【判为非危急】满足任一即可：
+
+            1. 明确否定：“没有胸闷”“不痛了”“没出现过”；
+
+            2. 既往病史陈述：“三年前心梗过，现在来复查”；
+
+            3. 假设或提问：“胸闷可能是什么原因”“吃什么能预防”；
+
+            4. 症状轻微、慢性、已经缓解，或仅描述体检指标异常。
+
+
+            只输出两个字：“危急”或“非危急”。不要输出任何解释、标点或其他内容。'
+          id: 898a45a2-f09e-4d15-bcb6-a81069a7e655
+        context:
+          enabled: false
+          variable_selector: []
+        vision:
+          enabled: false
+        structured_output_enabled: false
+        type: llm
+        selected: false
+      position:
+        x: 900
+        y: 420
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 420
+      width: 244
+      height: 120
+      selected: false
+    - id: '1790000000005'
+      type: custom
+      data:
+        title: ⑤ 复核结果判断
+        desc: 确认危急 → 直接输出急救指引；判定为非危急 → 回到正常导诊流程
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 177c6979-431d-4e7c-84c6-46b887920d89
+            varType: string
+            variable_selector:
+            - '1790000000004'
+            - text
+            comparison_operator: contains
+            value: 危急
+        type: if-else
+        selected: false
+      position:
+        x: 900
+        y: 580
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 580
+      width: 245
+      height: 140
+      selected: false
+    - id: '1790000000006'
+      type: custom
+      data:
+        title: ⑥ 紧急就医话术（模板固定）
+        desc: 话术由模板生成而非 LLM，保证永远不会被模型改写或遗漏关键步骤
+        variables:
+        - variable: arg1
+          value_selector:
+          - '1790000000002'
+          - hit_keywords
+        template: '⚠️ 【紧急情况提示】
+
+
+          系统在您的描述中识别到可能危及生命的信号：{{ arg1 }}
+
+
+          请立即采取以下行动：
+
+          1. 马上拨打 120 急救电话；若 120 暂时无法接通，请让身边人协助，或直接前往最近的医院急诊科。
+
+          2. 不要自行驾车前往医院，请由家人、朋友陪同或等待救护车。
+
+          3. 等待救援时保持平卧或半卧位，解开衣领，保持呼吸道通畅；
+
+          4. 不要自行服药、进食或饮水（除非急救人员指导）；
+
+          5. 保持电话畅通，向接线员说明准确地址和症状表现。
+
+
+          本平台无法处理紧急医疗情况，请不要在此等待回复。时间就是生命。
+
+          （本次会话已标记为高风险并留痕，用于后续质量复盘）'
+        type: template-transform
+        selected: false
+      position:
+        x: 1320
+        y: 560
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1320
+        y: 560
+      width: 244
+      height: 130
+      selected: false
+    - id: '1790000000007'
+      type: custom
+      data:
+        title: ⛔ 结束：紧急就医指引
+        desc: 固定话术输出，不经 LLM 生成，零幻觉风险
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000006'
+          - output
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 1740
+        y: 570
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1740
+        y: 570
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000008'
+      type: custom
+      data:
+        title: ⑦ 意图路由（5 分类）
+        desc: 用分类器替代「LLM+代码+条件分支」三重串联，路由更稳定、更省 token
+        query_variable_selector:
+        - '1790000000002'
+        - clean_input
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen-plus
+          mode: chat
+          completion_params:
+            temperature: 0.1
+        instruction: '你是医院导诊系统的意图分类器。请判断用户这句话属于哪一类。
+
+          分类时优先考虑：用户是否在索要诊断或药方 > 是否在问院内业务 > 是否在问健康知识。'
+        classes:
+        - id: c1
+          label: 医疗健康咨询
+          name: 医疗健康咨询：问症状的可能原因、疾病常识、检查项目是什么意思、用药安全常识、饮食生活注意事项、这种情况该挂哪个科室
+        - id: c2
+          label: 医院业务查询
+          name: 医院业务查询：挂号怎么挂、费用怎么缴、报告怎么查怎么拿、病历复印、就诊流程、科室在几楼、门诊时间、医保报销流程、预约改约
+        - id: c3
+          label: 要求诊断或开药
+          name: 要求诊断或开药：要求直接判断得了什么病、要求开处方、要求推荐具体药品名称或剂量、要求对检查报告下最终结论、要求判断某项指标是不是正常并要一个确定答复
+        - id: c4
+          label: 闲聊或无关内容
+          name: 闲聊或无关内容：打招呼、寒暄、情绪表达、与医疗健康完全无关的话题、无意义的乱码
+        - id: c5
+          label: 复杂或超纲问题
+          name: 复杂或超纲问题：罕见病、多病共存的复杂情况、需要结合大量个人病史才能判断、问题表述模糊无法定位、明显超出常见科普与导诊范围
+        vision:
+          enabled: false
+        type: question-classifier
+        selected: false
+      position:
+        x: 480
+        y: 700
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 480
+        y: 700
+      width: 244
+      height: 170
+      selected: false
+    - id: '1790000000009'
+      type: custom
+      data:
+        title: ⑧ 医疗知识库检索
+        desc: 4 个知识库并行检索，开启重排序 + 相似度阈值，过滤低质量召回
+        query_variable_selector:
+        - '1790000000002'
+        - clean_input
+        query_attachment_selector: []
+        dataset_ids:
+        - afbc55b0-9cd4-40c5-a0af-955ef0761b55
+        - 431c1323-3b9e-4fce-ad85-3133d8f9a101
+        - bc8d50c4-ae1c-474e-93a2-239661ce92b4
+        - 2b020888-f035-43d6-86ce-6640f2a756d7
+        retrieval_mode: multiple
+        multiple_retrieval_config:
+          top_k: 5
+          score_threshold: 0.35
+          score_threshold_enabled: true
+          reranking_mode: reranking_model
+          reranking_enable: false
+          reranking_model:
+            provider: langgenius/tongyi/tongyi
+            model: qwen3-rerank
+            model_provider: langgenius/tongyi/tongyi
+        type: knowledge-retrieval
+        selected: false
+      position:
+        x: 80
+        y: 930
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 80
+        y: 930
+      width: 244
+      height: 140
+      selected: false
+    - id: '1790000000010'
+      type: custom
+      data:
+        title: ⑨ 召回质量判断
+        desc: 有有效召回 → 基于知识库生成（可溯源）；无召回 → 通用常识兜底并强制声明无依据
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 68832238-6951-49ab-a44e-07f742c95400
+            varType: array[object]
+            variable_selector:
+            - '1790000000009'
+            - result
+            comparison_operator: not empty
+            value: ''
+        type: if-else
+        selected: false
+      position:
+        x: 80
+        y: 1120
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 80
+        y: 1120
+      width: 245
+      height: 140
+      selected: false
+    - id: '1790000000011'
+      type: custom
+      data:
+        title: ⑩ 基于知识库生成科普回答
+        desc: 强制结构化输出（原因/科室/检查/先行处理/危险信号），严格限定不诊断不开药
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.6
+        prompt_template:
+        - role: system
+          text: '你是一名服务于医院导诊场景的医疗健康科普助手。
+
+
+            【服务边界 —— 必须严格遵守】
+
+            1. 只做健康科普、科室建议、就诊指引；绝不给出诊断结论、处方药名、用药剂量或治疗方案；
+
+            2. 禁止任何诊断性表述（如“你患有…”“可以确诊为…”“建议服用…”）；
+
+            3. 所有医学内容必须来自【参考资料】；资料未覆盖的部分，明确说明“本知识库暂未收录”，不要编造；
+
+            4. 涉及用药只能做安全提示（如“请遵医嘱”“不要自行调整剂量”），不得推荐具体药品。
+
+
+            【输出结构】
+
+            一、可能的常见原因（仅作科普，不构成诊断）
+
+            二、建议就诊科室（并说明为什么挂这个科）
+
+            三、可能需要做的检查（科普性质，由医生决定）
+
+            四、就医前可以先做的事
+
+            五、出现哪些情况需要尽快就医（危险信号）
+
+
+            【参考资料】
+
+            {{#context#}}
+
+
+            【用户问题】{{#1790000000002.clean_input#}}
+
+            '
+          id: 51c74bde-08bd-4c36-8953-8fa387ff02e5
+        context:
+          enabled: true
+          variable_selector:
+          - '1790000000009'
+          - result
+        vision:
+          enabled: false
+        structured_output_enabled: false
+        type: llm
+        selected: false
+      position:
+        x: 80
+        y: 1320
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 80
+        y: 1320
+      width: 244
+      height: 120
+      selected: false
+    - id: '1790000000012'
+      type: custom
+      data:
+        title: ⑩' 通用科普兜底（无知识库依据）
+        desc: 知识库未命中时的降级方案：强制在开头声明“未查询到知识库资料”，避免用户误信
+        model:
+          provider: langgenius/tongyi/tongyi
+          name: qwen3.8-max
+          mode: chat
+          completion_params:
+            temperature: 0.6
+        prompt_template:
+        - role: system
+          text: '你是医院导诊场景的医疗健康科普助手。当前知识库中没有检索到与用户问题直接相关的资料。
+
+
+            【最高优先级要求】回答的第一句必须是：
+
+            “以下内容为通用健康常识，未查询到本知识库的匹配资料，不能替代医生面诊。”
+
+
+            【其他要求】
+
+            1. 只提供通用健康常识与就诊方向建议，绝不给诊断结论、药名、剂量；
+
+            2. 明确建议用户到相应科室面诊；
+
+            3. 全文控制在 300 字以内；
+
+            4. 结尾提醒：本回答未基于本院知识库，请以医生面诊结论为准。
+
+
+            【用户问题】{{#1790000000002.clean_input#}}
+
+            '
+          id: e6c556a6-28ac-4c44-9987-0188b0d359e4
+        context:
+          enabled: false
+          variable_selector: []
+        vision:
+          enabled: false
+        structured_output_enabled: false
+        type: llm
+        selected: false
+      position:
+        x: 520
+        y: 1320
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 520
+        y: 1320
+      width: 244
+      height: 120
+      selected: false
+    - id: '1790000000013'
+      type: custom
+      data:
+        title: ⑪ 回答汇聚
+        desc: 两条生成分支只有一条会执行，用聚合节点取回实际生效的那一条，避免变量未就绪报错
+        output_type: string
+        variables:
+        - - '1790000000011'
+          - text
+        - - '1790000000012'
+          - text
+        type: variable-aggregator
+        selected: false
+      position:
+        x: 300
+        y: 1520
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 300
+        y: 1520
+      width: 244
+      height: 110
+      selected: false
+    - id: '1790000000014'
+      type: custom
+      data:
+        title: ⑫ 输出安全层：免责声明 + 禁用表述过滤
+        desc: 正则拦截诊断性表述/用药推荐/剂量描述/绝对化承诺；通过校验则强制追加免责声明
+        code_language: python3
+        code: "\nimport re\n\n# 合规红线：出现以下任一表述即判定为不合规\nBANNED_PATTERNS = [\n    (r\"建议(服用|口服|使用|吃点|去打|注射)[\\u4e00-\\u9fa5A-Za-z0-9]{1,12}\", \"用药推荐\"),\n    (r\"(每日|每天|一天|一次)\\s*[0-9０-９]+\\s*(次|片|粒|mg|毫克|毫升|ml)\", \"剂量描述\"),\n    (r\"(确诊为|诊断为|你患有|您患有|您得了|你得了|应该是|肯定是)[\\u4e00-\\u9fa5]{2,14}\", \"诊断性表述\"),\n    (r\"(不用去医院|无需就医|不必就诊|不用看医生|自己在家处理)\", \"误导性建议\"),\n    (r\"(包治|根治|一定能治好|绝对安全|保证痊愈)\", \"绝对化承诺\"),\n    (r\"(处方|开药给你|按这个方子)\", \"处方性表述\"),\n]\n\nDISCLAIMER = (\n    \"\\n\\n————————————\\n\"\n    \"【免责声明】以上内容仅为健康科普与就诊指引，不构成任何医疗诊断、用药建议或治疗方案。\"\n    \"AI 无法替代医生面诊，请以执业医师的诊断结论为准。\"\n    \"如症状持续、加重或出现紧急情况，请立即前往医院急诊科或拨打 120。\"\n)\n\n\ndef main(draft_answer: str, pii_masked: str) -> dict:\n    text = (draft_answer or \"\").strip()\n\n    # 0. 剥离模型思维链标签（部分模型会把推理过程一并输出，绝不能展示给患者）\n    text = re.sub(r\"<think[\\s\\S]*?</think\\s*>\", \"\", text, flags=re.IGNORECASE)\n    text = re.sub(r\"<thinking[\\s\\S]*?</thinking\\s*>\", \"\", text, flags=re.IGNORECASE)\n    text = re.sub(r\"</?think\\s*>\", \"\", text, flags=re.IGNORECASE)\n    text = re.sub(r\"【思考】[\\s\\S]*?【/思考】\", \"\", text)\n    text = text.strip()\n\n    hits = []\n    for pattern, label in BANNED_PATTERNS:\n        m = re.search(pattern, text)\n        if m:\n            hits.append(\"%s：「%s」\" % (label, m.group(0)))\n\n    if not hits:\n        final = text + DISCLAIMER\n        is_compliant = \"是\"\n        detail = \"无\"\n    else:\n        final = (\n            \"为保障医疗安全，本次回答未通过内容合规校验，已被系统拦截。\\n\\n\"\n            \"该回答中出现了超越平台边界的表述（可能涉及诊断结论或用药建议），\"\n            \"出于安全考虑不向用户展示。\\n\\n\"\n            \"建议您：\\n\"\n            \"1. 前往对应科室面诊，由执业医师给出诊断；\\n\"\n            \"2. 如需用药指导，请咨询医生或执业药师；\\n\"\n            \"3. 如症状持续或加重，请及时就医；出现紧急情况请立即拨打 120。\\n\\n\"\n        )\n        if pii_masked and pii_masked != \"无\":\n            final += \"（提示：本次提问中的敏感信息已自动脱敏：%s）\\n\" % pii_masked\n        is_compliant = \"否\"\n        detail = \"；\".join(hits)\n\n    return {\n        \"final_answer\": final,\n        \"is_compliant\": is_compliant,\n        \"violation_detail\": detail,\n    }\n"
+        variables:
+        - variable: draft_answer
+          value_selector:
+          - '1790000000013'
+          - output
+          value_type: string
+        - variable: pii_masked
+          value_selector:
+          - '1790000000002'
+          - pii_masked
+          value_type: string
+        outputs:
+          final_answer:
+            type: string
+            children: null
+          is_compliant:
+            type: string
+            children: null
+          violation_detail:
+            type: string
+            children: null
+        retry_config:
+          retry_enabled: true
+          max_retries: 2
+          retry_interval: 1000
+        type: code
+        selected: false
+      position:
+        x: 300
+        y: 1700
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 300
+        y: 1700
+      width: 244
+      height: 140
+      selected: false
+    - id: '1790000000015'
+      type: custom
+      data:
+        title: ⑬ 合规判断
+        desc: 通过校验 → 输出带免责声明的回答；未通过 → 拦截并给出替代建议（永不把违规内容透出）
+        cases:
+        - id: 'true'
+          case_id: 'true'
+          logical_operator: and
+          conditions:
+          - id: 4bbe6a7d-3124-4316-a856-2afc1b1c15f7
+            varType: string
+            variable_selector:
+            - '1790000000014'
+            - is_compliant
+            comparison_operator: contains
+            value: 是
+        type: if-else
+        selected: false
+      position:
+        x: 300
+        y: 1890
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 300
+        y: 1890
+      width: 245
+      height: 140
+      selected: false
+    - id: '1790000000016'
+      type: custom
+      data:
+        title: ✅ 结束：科普回答
+        desc: 带免责声明的合规回答
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000014'
+          - final_answer
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 80
+        y: 2070
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 80
+        y: 2070
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000017'
+      type: custom
+      data:
+        title: ⛔ 结束：合规拦截
+        desc: 违规回答不下发，替换为安全话术 + 引导就医
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000014'
+          - final_answer
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 520
+        y: 2070
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 520
+        y: 2070
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000018'
+      type: custom
+      data:
+        title: ⑭ 工具调用：HIS / 患者服务 API
+        desc: 模拟调用院内挂号、缴费、报告查询接口（本地 Mock 服务，见配套说明）
+        method: post
+        url: http://host.docker.internal:18080/api/hospital/service
+        authorization:
+          type: no-auth
+          config: null
+        headers: Content-Type:application/json
+        params: ''
+        body:
+          type: json
+          data:
+          - id: k1
+            key: ''
+            type: text
+            value: '{"query": "{{#1790000000002.clean_input#}}", "channel": "ai-guide-demo"}'
+        ssl_verify: true
+        timeout:
+          connect: 10
+          read: 30
+          write: 30
+        retry_config:
+          retry_enabled: true
+          max_retries: 2
+          retry_interval: 500
+        variables: []
+        default_value:
+        - key: body
+          type: string
+          value: "【院内服务接口暂时不可用】\n抱歉，业务查询服务当前无法连接，请稍后重试。\n\n您也可以：\n  1. 拨打院内服务热线 96120；\n  2. 到门诊一楼导诊台咨询；\n  3. 通过医院官方公众号查询办理。"
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: '{}'
+        error_strategy: default-value
+        type: http-request
+        selected: false
+      position:
+        x: 900
+        y: 930
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 930
+      width: 244
+      height: 160
+      selected: false
+    - id: '1790000000019'
+      type: custom
+      data:
+        title: ✅ 结束：业务查询结果
+        desc: 返回院内业务接口结果；接口异常时由 error_strategy 走默认值，不中断会话
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000018'
+          - body
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 1320
+        y: 960
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1320
+        y: 960
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000020'
+      type: custom
+      data:
+        title: ⑮ 诊疗边界话术（模板固定）
+        desc: 合规红线话术由模板固定输出，确保任何情况下都不会给出诊断或药方
+        variables: []
+        template: '抱歉，这个问题已经超出了我能提供的服务范围。
+
+
+          按照医疗合规要求，AI 不能给出：
+
+          · 疾病诊断结论（如“您得的是××病”）
+
+          · 处方或具体药品推荐、用药剂量
+
+          · 对检查报告的最终判读结论
+
+
+          这些判断必须由执业医师结合面诊、体格检查和检验结果作出，任何 AI 结论都可能带来风险。
+
+
+          我可以帮您做的是：
+
+          1. 说明这个症状通常与哪些科室相关，帮您挂对号；
+
+          2. 介绍相关检查的作用和注意事项；
+
+          3. 提示需要警惕的危险信号。
+
+
+          建议您携带相关资料前往医院面诊。如果您愿意，可以把问题改成“这个症状应该挂什么科”，我来帮您梳理。'
+        type: template-transform
+        selected: false
+      position:
+        x: 900
+        y: 1140
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 1140
+      width: 244
+      height: 140
+      selected: false
+    - id: '1790000000021'
+      type: custom
+      data:
+        title: ⛔ 结束：诊疗边界拒答
+        desc: 超范围请求的合规拒答 + 替代性引导
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000020'
+          - output
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 1320
+        y: 1170
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1320
+        y: 1170
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000022'
+      type: custom
+      data:
+        title: ⑯ 闲聊引导话术（模板固定）
+        desc: 闲聊分支不调用大模型，直接给出引导式回复，省 token 且可控
+        variables: []
+        template: '您好，我是医院的 AI 导诊助手 👋
+
+
+          我只能回答医疗健康相关的问题，暂时无法陪您聊天，请谅解。
+
+
+          您可以这样问我：
+
+          · “咳嗽三周了，应该挂什么科？”
+
+          · “做胃镜前需要注意什么？”
+
+          · “高血压的人日常要注意哪些事？”
+
+          · “报告上写甲状腺结节 3 类是什么意思？”
+
+
+          如果您想查询挂号、缴费、报告领取等院内业务，也可以直接告诉我。
+
+          如果出现胸闷、呼吸困难、大出血、意识不清等紧急情况，请立即拨打 120。'
+        type: template-transform
+        selected: false
+      position:
+        x: 900
+        y: 1330
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 1330
+      width: 244
+      height: 140
+      selected: false
+    - id: '1790000000023'
+      type: custom
+      data:
+        title: ⛔ 结束：闲聊引导
+        desc: 引导用户回到医疗主题
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000022'
+          - output
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 1320
+        y: 1360
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1320
+        y: 1360
+      width: 244
+      height: 90
+      selected: false
+    - id: '1790000000024'
+      type: custom
+      data:
+        title: ⑰ 转人工（Human-in-the-loop）
+        desc: 超纲/罕见/复杂问题转人工客服；24 小时未处理自动走超时分支。人工回复后流程继续。
+        form_content: '请客服 / 专科医生助理处理以下转人工请求。
+
+
+          **用户问题（已脱敏）**
+
+          {{#1790000000002.clean_input#}}
+
+
+          **转人工原因**：意图分类为「复杂或超纲问题」
+
+
+          请在下方填写给用户的回复内容，然后选择处理动作。
+
+          注意：回复内容同样不得包含诊断结论或处方建议。'
+        inputs:
+        - type: paragraph
+          output_variable_name: agent_reply
+          default:
+            type: constant
+            selector: []
+            value: ''
+        user_actions:
+        - id: a_done
+          title: 已完成人工回复
+          button_style: primary
+        - id: a_escalate
+          title: 升级至专科医生
+          button_style: default
+        timeout: 24
+        timeout_unit: hour
+        delivery_methods:
+        - id: dm_webapp
+          type: webapp
+          enabled: true
+        type: human-input
+        selected: false
+      position:
+        x: 900
+        y: 1520
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 900
+        y: 1520
+      width: 244
+      height: 170
+      selected: false
+    - id: '1790000000025'
+      type: custom
+      data:
+        title: ✅ 结束：人工处理结果
+        desc: 回传人工填写的内容；超时未处理也回到此节点给出提示
+        outputs:
+        - variable: output
+          value_selector:
+          - '1790000000024'
+          - agent_reply
+          value_type: string
+        type: end
+        selected: false
+      position:
+        x: 1320
+        y: 1560
+      targetPosition: left
+      sourcePosition: right
+      positionAbsolute:
+        x: 1320
+        y: 1560
+      width: 244
+      height: 90
+      selected: false
+    edges:
+    - id: 1790000000001-source-1790000000002-target
+      type: custom
+      source: '1790000000001'
+      sourceHandle: source
+      target: '1790000000002'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000002-source-1790000000003-target
+      type: custom
+      source: '1790000000002'
+      sourceHandle: source
+      target: '1790000000003'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000003-true-1790000000004-target
+      type: custom
+      source: '1790000000003'
+      sourceHandle: 'true'
+      target: '1790000000004'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000003-false-1790000000008-target
+      type: custom
+      source: '1790000000003'
+      sourceHandle: 'false'
+      target: '1790000000008'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000004-source-1790000000005-target
+      type: custom
+      source: '1790000000004'
+      sourceHandle: source
+      target: '1790000000005'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000005-true-1790000000006-target
+      type: custom
+      source: '1790000000005'
+      sourceHandle: 'true'
+      target: '1790000000006'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000005-false-1790000000008-target
+      type: custom
+      source: '1790000000005'
+      sourceHandle: 'false'
+      target: '1790000000008'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000006-source-1790000000007-target
+      type: custom
+      source: '1790000000006'
+      sourceHandle: source
+      target: '1790000000007'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000008-c1-1790000000009-target
+      type: custom
+      source: '1790000000008'
+      sourceHandle: c1
+      target: '1790000000009'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000008-c2-1790000000018-target
+      type: custom
+      source: '1790000000008'
+      sourceHandle: c2
+      target: '1790000000018'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000008-c3-1790000000020-target
+      type: custom
+      source: '1790000000008'
+      sourceHandle: c3
+      target: '1790000000020'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000008-c4-1790000000022-target
+      type: custom
+      source: '1790000000008'
+      sourceHandle: c4
+      target: '1790000000022'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000008-c5-1790000000024-target
+      type: custom
+      source: '1790000000008'
+      sourceHandle: c5
+      target: '1790000000024'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000009-source-1790000000010-target
+      type: custom
+      source: '1790000000009'
+      sourceHandle: source
+      target: '1790000000010'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000010-true-1790000000011-target
+      type: custom
+      source: '1790000000010'
+      sourceHandle: 'true'
+      target: '1790000000011'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000010-false-1790000000012-target
+      type: custom
+      source: '1790000000010'
+      sourceHandle: 'false'
+      target: '1790000000012'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000011-source-1790000000013-target
+      type: custom
+      source: '1790000000011'
+      sourceHandle: source
+      target: '1790000000013'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000012-source-1790000000013-target
+      type: custom
+      source: '1790000000012'
+      sourceHandle: source
+      target: '1790000000013'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000013-source-1790000000014-target
+      type: custom
+      source: '1790000000013'
+      sourceHandle: source
+      target: '1790000000014'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000014-source-1790000000015-target
+      type: custom
+      source: '1790000000014'
+      sourceHandle: source
+      target: '1790000000015'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000015-true-1790000000016-target
+      type: custom
+      source: '1790000000015'
+      sourceHandle: 'true'
+      target: '1790000000016'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000015-false-1790000000017-target
+      type: custom
+      source: '1790000000015'
+      sourceHandle: 'false'
+      target: '1790000000017'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000018-source-1790000000019-target
+      type: custom
+      source: '1790000000018'
+      sourceHandle: source
+      target: '1790000000019'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000020-source-1790000000021-target
+      type: custom
+      source: '1790000000020'
+      sourceHandle: source
+      target: '1790000000021'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000022-source-1790000000023-target
+      type: custom
+      source: '1790000000022'
+      sourceHandle: source
+      target: '1790000000023'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000024-a_done-1790000000025-target
+      type: custom
+      source: '1790000000024'
+      sourceHandle: a_done
+      target: '1790000000025'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000024-a_escalate-1790000000025-target
+      type: custom
+      source: '1790000000024'
+      sourceHandle: a_escalate
+      target: '1790000000025'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    - id: 1790000000024-__timeout-1790000000025-target
+      type: custom
+      source: '1790000000024'
+      sourceHandle: __timeout
+      target: '1790000000025'
+      targetHandle: target
+      data:
+        sourceType: custom
+        targetType: custom
+        isInIteration: false
+        isInLoop: false
+      zIndex: 0
+      selected: false
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.45

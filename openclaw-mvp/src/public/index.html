@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw MVP — Agent Runtime</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #1f2329; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ── header ── */
+  header {
+    background: #fff; border-bottom: 1px solid #e0e3e8; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; color: #3370ff; white-space: nowrap; }
+  header .sub { font-size: 12px; color: #8f959e; white-space: nowrap; }
+  .spacer { flex: 1; }
+  select, button.btn {
+    border: 1px solid #d0d3d9; background: #fff; border-radius: 6px;
+    padding: 5px 10px; font-size: 13px; cursor: pointer; color: #1f2329;
+  }
+  button.btn:hover { border-color: #3370ff; color: #3370ff; }
+  button.btn.primary { background: #3370ff; color: #fff; border-color: #3370ff; }
+  button.btn.primary:hover { background: #2458e6; }
+
+  /* token 进度条 */
+  #tokenBarWrap { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #646a73; white-space: nowrap; }
+  #tokenBarOuter { width: 120px; height: 8px; border-radius: 4px; background: #e5e6eb; overflow: hidden; }
+  #tokenBarInner { height: 100%; width: 0%; background: #3370ff; transition: width .3s, background .3s; }
+  #tokenBarText { min-width: 90px; }
+
+  /* ── main split ── */
+  #main { flex: 1; display: flex; min-height: 0; }
+  #chatPanel { flex: 1; min-width: 300px; display: flex; flex-direction: column; background: #f7f8fa; min-height: 0; }
+  #divider { width: 5px; cursor: col-resize; background: #e0e3e8; flex: none; }
+  #divider:hover, #divider.dragging { background: #f54a45; }
+  #logPanel {
+    width: 420px; min-width: 200px; flex: none; background: #fff;
+    border-left: 1px solid #e0e3e8; display: flex; flex-direction: column; min-height: 0;
+  }
+
+  /* ── chat ── */
+  #chatMessages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 10px; position: relative; line-height: 1.6; font-size: 14px; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: #3370ff; color: #fff; border-bottom-right-radius: 2px; }
+  .msg.ai { align-self: flex-start; background: #dee0e3; color: #1f2329; border-bottom-left-radius: 2px; }
+  .msg.ai pre { background: #2b2f36; color: #e6eaf0; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 6px 0; }
+  .msg.ai code { font-family: Consolas, monospace; font-size: 13px; }
+  .msg.ai p code, .msg.ai li code { background: #c9ccd1; padding: 1px 5px; border-radius: 4px; }
+  .msg .copyBtn {
+    position: absolute; right: 6px; top: 6px; font-size: 11px; border: none; background: rgba(255,255,255,.75);
+    border-radius: 4px; padding: 2px 6px; cursor: pointer; display: none; color: #1f2329;
+  }
+  .msg:hover .copyBtn { display: block; }
+  .msg.user .copyBtn { background: rgba(0,0,0,.2); color: #fff; }
+  .msg.toolnote { align-self: flex-start; font-size: 12px; color: #8f959e; background: none; padding: 0; }
+  .thinking { align-self: flex-start; color: #8f959e; font-size: 13px; padding: 8px 12px; }
+  .thinking .dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+  #inputBar { padding: 12px 16px; border-top: 1px solid #e0e3e8; background: #fff; display: flex; gap: 10px; }
+  #chatInput { flex: 1; border: 1px solid #d0d3d9; border-radius: 8px; padding: 10px 12px; font-size: 14px; resize: none; height: 44px; outline: none; font-family: inherit; }
+  #chatInput:focus { border-color: #3370ff; }
+  #chatInput:disabled { background: #f2f3f5; }
+  #sendBtn { padding: 0 22px; border: none; border-radius: 8px; background: #3370ff; color: #fff; font-size: 14px; cursor: pointer; }
+  #sendBtn:disabled { background: #a8c1ff; cursor: not-allowed; }
+
+  /* ── log panel ── */
+  #logHeader { padding: 8px 12px; border-bottom: 1px solid #e0e3e8; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  #logHeader .clear { font-size: 12px; font-weight: 400; }
+  #logList { flex: 1; overflow-y: auto; padding: 8px 10px; font-size: 12px; font-family: Consolas, monospace; }
+  .log-entry { padding: 5px 6px; border-radius: 4px; margin-bottom: 3px; }
+  .log-entry .tag { font-weight: bold; margin-right: 6px; }
+  .log-entry .msg-line { white-space: pre-wrap; word-break: break-all; }
+  .log-detail-toggle { color: #3370ff; cursor: pointer; margin-left: 6px; user-select: none; }
+  .log-detail {
+    display: none; margin-top: 4px; background: #f7f8fa; border: 1px solid #eceef1;
+    border-radius: 4px; padding: 6px; max-height: 200px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; color: #41464f;
+  }
+  .log-detail.open { display: block; }
+  .log-sep { border-top: 1px dashed #d0d3d9; margin: 8px 0; }
+
+  .lt-thinking { color: #b58900; background: #fffbe6; }
+  .lt-api_request { color: #7c3aed; background: #f6f2fd; }
+  .lt-api_response { color: #d97706; background: #fff7e6; }
+  .lt-tool_call { color: #1d6fd1; background: #eef5fe; }
+  .lt-tool_result { color: #1a7f37; background: #effaf1; }
+  .lt-reply { color: #3370ff; background: #f2f6ff; }
+  .lt-error { color: #d92d20; background: #fef0ef; }
+  .lt-compaction { color: #a21caf; background: #fdf4ff; }
+  .lt-token_usage { color: #646a73; background: #f5f6f7; }
+  .lt-info { color: #8f959e; background: #fafafa; }
+
+  /* ── settings modal ── */
+  #modalMask { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; align-items: center; justify-content: center; z-index: 100; }
+  #modalMask.open { display: flex; }
+  #modal { background: #fff; border-radius: 12px; width: min(720px, 90vw); max-height: 82vh; display: flex; flex-direction: column; }
+  #modal .m-head { padding: 14px 20px; border-bottom: 1px solid #e0e3e8; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  #modal .m-body { padding: 16px 20px; overflow-y: auto; }
+  #modal h3 { font-size: 14px; margin: 10px 0 6px; color: #1f2329; }
+  #modal pre { background: #f7f8fa; border: 1px solid #eceef1; border-radius: 6px; padding: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow-y: auto; }
+  #modal .hint { font-size: 12px; color: #8f959e; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>OpenClaw MVP</h1>
+    <span class="sub">Agent Loop 运行时 · 工具调用 · 会话 · 记忆</span>
+    <div class="spacer"></div>
+    <div id="tokenBarWrap">
+      <div id="tokenBarOuter"><div id="tokenBarInner"></div></div>
+      <span id="tokenBarText">token 0 / 32000</span>
+    </div>
+    <select id="sessionSelect" title="切换会话"></select>
+    <button class="btn" id="newSessionBtn">新建会话</button>
+    <button class="btn" id="settingsBtn">设置</button>
+  </header>
+
+  <div id="main">
+    <div id="chatPanel">
+      <div id="chatMessages"></div>
+      <div id="inputBar">
+        <textarea id="chatInput" placeholder="输入消息，Enter 发送（Shift+Enter 换行）" rows="1"></textarea>
+        <button id="sendBtn">发送</button>
+      </div>
+    </div>
+    <div id="divider" title="拖拽调整宽度"></div>
+    <div id="logPanel">
+      <div id="logHeader">
+        <span>运行日志</span>
+        <span class="spacer"></span>
+        <button class="btn clear" id="clearLogBtn">清空</button>
+      </div>
+      <div id="logList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div id="modalMask">
+  <div id="modal">
+    <div class="m-head"><span>设置</span><button class="btn" id="closeModalBtn">关闭</button></div>
+    <div class="m-body">
+      <h3>System Prompt（当前生效，只读）</h3>
+      <pre id="spContent">加载中...</pre>
+      <div class="hint" id="spHint"></div>
+      <h3>长期记忆（MEMORY.md，只读）</h3>
+      <pre id="memContent">加载中...</pre>
+      <div class="hint" id="memHint"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ────────────────── 基础引用 ────────────────── */
+const $ = (id) => document.getElementById(id);
+const chatMessages = $("chatMessages"), chatInput = $("chatInput"), sendBtn = $("sendBtn");
+const logList = $("logList"), sessionSelect = $("sessionSelect");
+let pending = false;
+
+/* ────────────────── 对话气泡 ────────────────── */
+function addBubble(role, content) {
+  const div = document.createElement("div");
+  div.className = "msg " + (role === "user" ? "user" : "ai");
+  if (role === "ai" && window.marked) {
+    div.innerHTML = marked.parse(content);
+  } else {
+    div.textContent = content;
+  }
+  const copy = document.createElement("button");
+  copy.className = "copyBtn"; copy.textContent = "复制";
+  copy.onclick = () => { navigator.clipboard.writeText(content); copy.textContent = "已复制"; setTimeout(() => copy.textContent = "复制", 1200); };
+  div.appendChild(copy);
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+function addToolNote(text) {
+  const div = document.createElement("div");
+  div.className = "msg toolnote";
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+let thinkingEl = null;
+function showThinking() {
+  if (thinkingEl) return;
+  thinkingEl = document.createElement("div");
+  thinkingEl.className = "thinking";
+  thinkingEl.innerHTML = 'AI 正在思考<span class="dots"></span>';
+  chatMessages.appendChild(thinkingEl);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+function hideThinking() { if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; } }
+
+/* ────────────────── 日志面板 ────────────────── */
+const LOG_META = {
+  thinking:      { label: "思考",       cls: "lt-thinking" },
+  api_request:   { label: "发送给AI",   cls: "lt-api_request" },
+  api_response:  { label: "AI原始返回", cls: "lt-api_response" },
+  tool_call:     { label: "调用工具",   cls: "lt-tool_call" },
+  tool_result:   { label: "工具结果",   cls: "lt-tool_result" },
+  reply:         { label: "最终回复",   cls: "lt-reply" },
+  error:         { label: "错误",       cls: "lt-error" },
+  compaction:    { label: "压缩",       cls: "lt-compaction" },
+  token_usage:   { label: "token用量",  cls: "lt-token_usage" },
+  info:          { label: "信息",       cls: "lt-info" },
+};
+function addLog(entry) {
+  const meta = LOG_META[entry.type] || LOG_META.info;
+  const div = document.createElement("div");
+  div.className = "log-entry " + meta.cls;
+
+  const msgSpan = document.createElement("span");
+  msgSpan.className = "msg-line";
+  msgSpan.textContent = `[${meta.label}] ` + (entry.message || "");
+
+  div.appendChild(msgSpan);
+
+  if (entry.detail !== undefined && entry.detail !== null) {
+    const toggle = document.createElement("span");
+    toggle.className = "log-detail-toggle";
+    toggle.textContent = "[展开]";
+    const detail = document.createElement("div");
+    detail.className = "log-detail";
+    detail.textContent = typeof entry.detail === "string" ? entry.detail : JSON.stringify(entry.detail, null, 2);
+    toggle.onclick = () => {
+      const open = detail.classList.toggle("open");
+      toggle.textContent = open ? "[收起]" : "[展开]";
+    };
+    div.appendChild(toggle);
+    div.appendChild(detail);
+  }
+  logList.appendChild(div);
+  logList.scrollTop = logList.scrollHeight;
+}
+function addLogSeparator() {
+  const sep = document.createElement("div");
+  sep.className = "log-sep";
+  logList.appendChild(sep);
+}
+$("clearLogBtn").onclick = () => { logList.innerHTML = ""; };
+
+/* ────────────────── token 进度条 ────────────────── */
+function updateTokenBar(used, max) {
+  const pct = Math.min(100, (used / max) * 100);
+  const inner = $("tokenBarInner");
+  inner.style.width = pct.toFixed(1) + "%";
+  inner.style.background = pct < 50 ? "#3370ff" : pct < 80 ? "#f5a623" : "#f54a45";
+  $("tokenBarText").textContent = `token ${used} / ${max}`;
+}
+
+/* ────────────────── SSE 聊天 ────────────────── */
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || pending) return;
+  pending = true;
+  chatInput.value = "";
+  chatInput.disabled = true;
+  sendBtn.disabled = true;
+
+  addBubble("user", text);
+  addLogSeparator();
+  showThinking();
+
+  let aiBubble = null, gotReply = false;
+  try {
+    const res = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop(); // 留半行
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        let entry;
+        try { entry = JSON.parse(payload); } catch { continue; }
+        handleSSE(entry);
+        if (entry.type === "reply") {
+          gotReply = true;
+          hideThinking();
+          aiBubble = addBubble("ai", entry.message);
+        }
+        if (entry.type === "token_usage" && entry.detail) {
+          updateTokenBar(entry.detail.used, entry.detail.max);
+        }
+      }
+    }
+  } catch (err) {
+    addLog({ type: "error", message: "连接失败: " + err.message });
+  }
+  hideThinking();
+  if (!gotReply && !aiBubble) addBubble("ai", "(未收到回复，详见右侧日志)");
+  pending = false;
+  chatInput.disabled = false;
+  sendBtn.disabled = false;
+  chatInput.focus();
+  refreshSessions();
+}
+function handleSSE(entry) { addLog(entry); }
+
+sendBtn.onclick = sendMessage;
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+/* ────────────────── session 管理 ────────────────── */
+function renderHistory(messages) {
+  chatMessages.innerHTML = "";
+  for (const m of messages) {
+    if (m.role === "user") addBubble("user", m.content);
+    else if (m.role === "assistant" && m.content) addBubble("ai", m.content);
+    else if (m.role === "tool") addToolNote("🔧 工具结果: " + (m.content || "").slice(0, 80));
+    else if (m.role === "assistant" && m.tool_calls) addToolNote("🔧 调用工具: " + m.tool_calls.map(c => c.function.name).join(", "));
+  }
+}
+async function refreshSessions(keepSelection) {
+  const res = await fetch("/sessions");
+  const data = await res.json();
+  const prev = keepSelection ? sessionSelect.value : data.currentSessionId;
+  sessionSelect.innerHTML = "";
+  for (const s of data.sessions) {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.id;
+    sessionSelect.appendChild(opt);
+  }
+  if (!data.sessions.length) {
+    const opt = document.createElement("option");
+    opt.value = data.currentSessionId; opt.textContent = data.currentSessionId;
+    sessionSelect.appendChild(opt);
+  }
+  sessionSelect.value = prev && [...sessionSelect.options].some(o => o.value === prev) ? prev : data.currentSessionId;
+}
+sessionSelect.onchange = async () => {
+  const res = await fetch("/sessions/switch", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: sessionSelect.value }),
+  });
+  const data = await res.json();
+  renderHistory(data.messages || []);
+  addLog({ type: "info", message: `已切换到 session: ${data.sessionId}` });
+};
+$("newSessionBtn").onclick = async () => {
+  const res = await fetch("/sessions/new", { method: "POST" });
+  const data = await res.json();
+  await refreshSessions(data.sessionId);
+  chatMessages.innerHTML = "";
+  addLog({ type: "info", message: `已新建 session: ${data.sessionId}` });
+};
+
+/* ────────────────── 设置弹窗 ────────────────── */
+$("settingsBtn").onclick = async () => {
+  $("modalMask").classList.add("open");
+  const sp = await (await fetch("/system-prompt")).json();
+  $("spContent").textContent = sp.content;
+  $("spHint").textContent =
+    `自定义指令文件: ${sp.instructionsPath}` + (sp.loadedInstructions ? "（已加载）" : "（未创建，重启后生效需新建该文件）");
+  const mem = await (await fetch("/memory")).json();
+  $("memContent").textContent = mem.content || "(暂无记忆)";
+  $("memHint").textContent = `记忆目录 ~/.agent/memory/ · 共 ${mem.fileCount} 个文件 · ${mem.totalLines} 行`;
+};
+$("closeModalBtn").onclick = () => $("modalMask").classList.remove("open");
+$("modalMask").onclick = (e) => { if (e.target === $("modalMask")) $("modalMask").classList.remove("open"); };
+
+/* ────────────────── 可拖拽分割条 ────────────────── */
+(function initDivider() {
+  const divider = $("divider"), main = $("main"), logPanel = $("logPanel"), chatPanel = $("chatPanel");
+  let dragging = false;
+  divider.addEventListener("mousedown", (e) => {
+    dragging = true;
+    divider.classList.add("dragging");
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    e.preventDefault();
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = main.getBoundingClientRect();
+    const rightWidth = Math.min(Math.max(rect.right - e.clientX, 200), rect.width - 300);
+    logPanel.style.width = rightWidth + "px";
+    logPanel.style.flex = "none";
+    chatPanel.style.width = (rect.width - rightWidth - 5) + "px";
+  });
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove("dragging");
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  });
+})();
+
+/* ────────────────── 初始化 ────────────────── */
+(async function init() {
+  await refreshSessions();
+  // 加载当前会话历史
+  const res = await fetch("/sessions");
+  const data = await res.json();
+  const sw = await fetch("/sessions/switch", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: data.currentSessionId }),
+  });
+  const d = await sw.json();
+  renderHistory(d.messages || []);
+  updateTokenBar(0, 32000);
+  chatInput.focus();
+})();
+</script>
+</body>
+</html>

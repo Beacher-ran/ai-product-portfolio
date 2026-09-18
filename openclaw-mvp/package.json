@@ -1,0 +1,19 @@
+{
+  "name": "openclaw-mvp",
+  "version": "1.0.0",
+  "description": "OpenClaw MVP - Agent Loop 运行时核心（最小可运行复现）",
+  "type": "module",
+  "scripts": {
+    "server": "tsx src/server.ts",
+    "cli": "tsx src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

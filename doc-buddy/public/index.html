@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRD 搭子 · AI 需求梳理与文档生成</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<style>
+:root{
+  --bg1:#0e0f24; --bg2:#1b1040; --bg3:#0b1c3d;
+  --glass:rgba(255,255,255,.055);
+  --glass-strong:rgba(255,255,255,.09);
+  --stroke:rgba(255,255,255,.12);
+  --stroke-soft:rgba(255,255,255,.07);
+  --txt:#eef0ff; --txt-dim:#a9aecf; --txt-faint:#7c81a8;
+  --violet:#8b7cf7; --cyan:#4dd6c1; --pink:#e58bd0;
+  --ok:#4dd6c1; --warn:#f0b35e;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+  color:var(--txt);
+  background:linear-gradient(135deg,var(--bg1) 0%,var(--bg2) 48%,var(--bg3) 100%);
+  overflow:hidden;
+}
+/* ---- 背景光斑 ---- */
+.blob{position:fixed;border-radius:50%;filter:blur(110px);z-index:0;pointer-events:none;opacity:.4}
+.b1{width:540px;height:540px;background:#5b48c9;top:-180px;left:-140px;animation:fl1 20s ease-in-out infinite}
+.b2{width:460px;height:460px;background:#0e7d8f;bottom:-160px;right:-120px;animation:fl2 24s ease-in-out infinite}
+.b3{width:320px;height:320px;background:#a34d95;top:38%;left:52%;animation:fl1 18s ease-in-out infinite reverse;opacity:.28}
+@keyframes fl1{0%,100%{transform:translate(0,0)}50%{transform:translate(50px,36px)}}
+@keyframes fl2{0%,100%{transform:translate(0,0)}50%{transform:translate(-46px,-30px)}}
+/* ---- 布局 ---- */
+#app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:16px;gap:14px}
+.glass{
+  background:var(--glass);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid var(--stroke);
+  border-radius:20px;
+  box-shadow:0 8px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
+}
+/* ---- 顶栏 ---- */
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;flex-shrink:0}
+.logo{
+  width:40px;height:40px;border-radius:12px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--violet),var(--cyan));
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  box-shadow:0 4px 18px rgba(139,124,247,.45);
+}
+header h1{font-size:18px;font-weight:700;letter-spacing:.06em}
+header h1 em{font-style:normal;background:linear-gradient(90deg,var(--violet),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+header .sub{font-size:11.5px;color:var(--txt-dim);margin-top:2px}
+header .spacer{flex:1}
+.model-pill{
+  font-size:11px;color:var(--txt-dim);padding:6px 12px;border-radius:999px;
+  border:1px solid var(--stroke);background:var(--glass-strong);white-space:nowrap;
+}
+.model-pill b{color:var(--cyan);font-weight:600}
+/* ---- 主区 ---- */
+main{flex:1;display:flex;gap:14px;min-height:0}
+/* 左：对话 */
+#chatPanel{width:42%;min-width:360px;display:flex;flex-direction:column;overflow:hidden}
+.chat-head{padding:14px 18px 10px;border-bottom:1px solid var(--stroke-soft)}
+.chat-head .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chat-head .label{font-size:12.5px;color:var(--txt-dim);margin-right:2px}
+.badge{
+  font-size:11px;padding:4px 10px;border-radius:999px;
+  border:1px solid var(--stroke);color:var(--txt-faint);background:rgba(255,255,255,.03);
+  transition:all .4s;display:inline-flex;align-items:center;gap:4px;
+}
+.badge.on{color:#0d2420;background:linear-gradient(90deg,#4dd6c1,#3db9a6);border-color:transparent;font-weight:600;box-shadow:0 2px 12px rgba(77,214,193,.35)}
+#msgs{flex:1;overflow-y:auto;padding:16px 16px 6px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:88%;padding:11px 14px;border-radius:16px;font-size:13.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.msg.user{
+  align-self:flex-end;color:#fff;
+  background:linear-gradient(135deg,rgba(139,124,247,.85),rgba(108,92,230,.85));
+  border:1px solid rgba(255,255,255,.18);border-bottom-right-radius:5px;
+  box-shadow:0 4px 18px rgba(139,124,247,.3);
+}
+.msg.ai{
+  align-self:flex-start;background:var(--glass-strong);border:1px solid var(--stroke);
+  border-bottom-left-radius:5px;color:var(--txt);
+}
+.msg.ai .who{display:block;font-size:10.5px;color:var(--violet);letter-spacing:.12em;margin-bottom:5px;font-weight:700}
+/* 快捷选项 */
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-self:flex-start;max-width:88%;animation:pop .4s ease .1s both}
+.chip{
+  font-size:12.5px;padding:7px 14px;border-radius:999px;cursor:pointer;
+  background:rgba(139,124,247,.14);border:1px solid rgba(139,124,247,.45);color:#c9c1ff;
+  transition:all .25s;font-family:inherit;
+}
+.chip:hover{background:rgba(139,124,247,.3);transform:translateY(-1px)}
+/* 搭子建议卡片 */
+.suggest{
+  align-self:flex-start;max-width:88%;margin:2px 0;padding:10px 14px;border-radius:12px;
+  background:rgba(167,139,250,.10);border:1px dashed rgba(167,139,250,.45);
+  font-size:12.5px;line-height:1.7;color:#d9d2ff;animation:pop .4s ease .15s both;
+}
+/* 输入区 */
+.inputbar{padding:12px 14px;border-top:1px solid var(--stroke-soft);display:flex;gap:10px}
+#ipt{
+  flex:1;background:var(--glass-strong);border:1px solid var(--stroke);border-radius:14px;
+  color:var(--txt);font-size:13.5px;padding:12px 14px;font-family:inherit;resize:none;
+  outline:none;transition:border .25s;max-height:110px;line-height:1.6;
+}
+#ipt:focus{border-color:rgba(139,124,247,.6)}
+#btnSend{
+  width:48px;border-radius:14px;border:none;cursor:pointer;flex-shrink:0;
+  background:linear-gradient(135deg,var(--violet),#6c5ce6);color:#fff;font-size:18px;
+  transition:all .25s;
+}
+#btnSend:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(139,124,247,.45)}
+#btnSend:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+/* 打字中 */
+.typing{align-self:flex-start;display:flex;gap:5px;padding:14px 16px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--violet);animation:blink 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2;transform:scale(.85)}40%{opacity:1;transform:scale(1.1)}}
+/* 右：PRD */
+#prdPanel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.prd-head{padding:14px 18px;border-bottom:1px solid var(--stroke-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.prd-head .title{font-size:14.5px;font-weight:700;letter-spacing:.05em;display:flex;align-items:center;gap:8px}
+.prd-head .title .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.prd-head .spacer{flex:1}
+.btn{
+  font-size:12.5px;padding:8px 16px;border-radius:12px;cursor:pointer;font-family:inherit;
+  background:var(--glass-strong);border:1px solid var(--stroke);color:var(--txt-dim);
+  transition:all .25s;display:inline-flex;align-items:center;gap:6px;
+}
+.btn:hover:not(:disabled){color:var(--txt);border-color:rgba(255,255,255,.3);transform:translateY(-1px)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn.primary{
+  background:linear-gradient(135deg,var(--violet),#6c5ce6);color:#fff;border:none;font-weight:600;
+  box-shadow:0 4px 18px rgba(139,124,247,.4);padding:8px 20px;
+}
+.btn.primary:hover:not(:disabled){box-shadow:0 6px 26px rgba(139,124,247,.6)}
+.btn.primary:disabled{background:var(--glass-strong);color:var(--txt-faint);box-shadow:none;border:1px solid var(--stroke)}
+/* 文档类型切换（BRD / MRD / PRD） */
+.docseg{display:inline-flex;background:var(--glass-strong);border:1px solid var(--stroke);border-radius:12px;padding:3px;gap:2px}
+.docseg .seg{
+  font-family:inherit;font-size:12px;font-weight:600;letter-spacing:.3px;cursor:pointer;
+  padding:6px 13px;border-radius:9px;border:none;background:transparent;color:var(--txt-faint);
+  transition:all .22s;
+}
+.docseg .seg:hover{color:var(--txt-dim)}
+.docseg .seg.on{background:linear-gradient(135deg,var(--violet),#6c5ce6);color:#fff;box-shadow:0 3px 12px rgba(139,124,247,.42)}
+.dochint{display:inline-block;margin-top:8px;font-size:11.5px;color:var(--txt-faint);opacity:.85}
+.dochint b{color:var(--cyan);font-weight:600}
+/* PRD 内容区 */
+#prdScroll{flex:1;overflow-y:auto;position:relative}
+#prdEmpty{
+  height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;color:var(--txt-faint);text-align:center;padding:30px;
+}
+#prdEmpty .big{font-size:46px;filter:drop-shadow(0 4px 20px rgba(139,124,247,.4))}
+#prdEmpty .t1{font-size:15px;color:var(--txt-dim)}
+#prdEmpty .t2{font-size:12.5px;line-height:2}
+#prdEmpty .t2 code{background:rgba(139,124,247,.15);padding:1px 8px;border-radius:6px;color:#c9c1ff}
+/* Markdown 渲染样式 */
+#prdBody{padding:26px 30px 60px;display:none}
+#prdBody h1{font-size:24px;margin:8px 0 18px;padding-bottom:12px;border-bottom:2px solid rgba(139,124,247,.4);letter-spacing:.04em}
+#prdBody h2{font-size:18px;margin:28px 0 12px;color:#c9c1ff;display:flex;align-items:center;gap:8px}
+#prdBody h2::before{content:"";width:5px;height:18px;border-radius:3px;background:linear-gradient(180deg,var(--violet),var(--cyan))}
+#prdBody h3{font-size:15px;margin:20px 0 8px;color:var(--txt)}
+#prdBody h4{font-size:13.5px;margin:14px 0 6px;color:var(--txt-dim)}
+#prdBody p{font-size:13.5px;line-height:1.95;margin:8px 0;color:var(--txt)}
+#prdBody ul,#prdBody ol{padding-left:22px;margin:8px 0}
+#prdBody li{font-size:13.5px;line-height:1.9}
+#prdBody strong{color:#fff}
+#prdBody blockquote{border-left:3px solid var(--violet);background:rgba(139,124,247,.08);padding:10px 14px;margin:10px 0;border-radius:0 10px 10px 0}
+#prdBody table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px;border-radius:10px;overflow:hidden}
+#prdBody th{background:rgba(139,124,247,.2);padding:9px 12px;text-align:left;font-weight:600;border:1px solid rgba(255,255,255,.1)}
+#prdBody td{padding:8px 12px;border:1px solid rgba(255,255,255,.08);color:var(--txt-dim);line-height:1.7}
+#prdBody tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+#prdBody code{background:rgba(139,124,247,.15);padding:1px 7px;border-radius:6px;font-size:12px;color:#c9c1ff;font-family:Consolas,monospace}
+#prdBody pre{background:rgba(0,0,0,.35);border:1px solid var(--stroke-soft);border-radius:12px;padding:14px;overflow-x:auto;margin:12px 0}
+#prdBody pre code{background:none;padding:0;color:#b8c2ff}
+#prdBody hr{border:none;border-top:1px solid var(--stroke);margin:22px 0}
+.mermaid{background:rgba(255,255,255,.96);border-radius:14px;padding:18px;margin:14px 0;display:flex;justify-content:center;overflow-x:auto}
+/* 生成中遮罩 */
+#genOverlay{
+  position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  background:rgba(14,15,36,.75);backdrop-filter:blur(8px);z-index:5;border-radius:0 0 20px 20px;
+}
+#genOverlay.on{display:flex}
+.spinner{width:52px;height:52px;border-radius:50%;border:3px solid rgba(139,124,247,.25);border-top-color:var(--violet);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#genOverlay .gt{font-size:14.5px;color:var(--txt-dim);letter-spacing:.1em}
+#genOverlay .gt b{color:var(--violet)}
+/* toast */
+#toast{
+  position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(-16px);z-index:99;
+  background:rgba(20,22,48,.92);border:1px solid var(--stroke);color:var(--txt);
+  padding:10px 22px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:all .4s;
+  backdrop-filter:blur(10px);
+}
+#toast.show{opacity:1;transform:translateX(-50%)}
+/* 滚动条 */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
+::-webkit-scrollbar-track{background:transparent}
+/* PDF 导出时的浅色模式 */
+.print-light{background:#ffffff !important;color:#222 !important}
+.print-light *{color:#222 !important;background:transparent !important;border-color:#ddd !important;box-shadow:none !important}
+.print-light .mermaid{background:#fff !important;border:1px solid #eee}
+.print-light table th{background:#f0edff !important}
+/* 响应式 */
+@media (max-width:960px){
+  #app{overflow-y:auto}
+  main{flex-direction:column;height:auto}
+  #chatPanel{width:100%;min-width:0;height:70vh}
+  #prdPanel{height:80vh}
+  body{overflow:auto}
+}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+<div id="app">
+
+  <header class="glass">
+    <div class="logo">📝</div>
+    <div>
+      <h1>文档 <em>搭子</em></h1>
+      <div class="sub">聊着聊着，BRD / MRD / PRD 就写好了</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="model-pill">模型 <b>GLM-5.3</b> · 轻量推理 · Mermaid 流程图</div>
+  </header>
+
+  <main>
+    <!-- 左：对话 -->
+    <section id="chatPanel" class="glass">
+      <div class="chat-head">
+        <div class="row">
+          <span class="label">需求信息收集</span>
+          <span class="badge" data-k="product_name">✦ 产品名称</span>
+          <span class="badge" data-k="target_users">✦ 目标用户</span>
+          <span class="badge" data-k="pain_points">✦ 痛点与需求</span>
+          <span class="badge" data-k="core_solution">✦ 核心解决方案</span>
+          <span class="badge" data-k="key_interaction_logic">✦ 核心交互逻辑</span>
+        </div>
+      </div>
+      <div id="msgs"></div>
+      <div class="inputbar">
+        <textarea id="ipt" rows="1" placeholder="描述你的产品想法，例如：我想做一个帮大学生管理生活费的记账 App…"></textarea>
+        <button id="btnSend" title="发送">➤</button>
+      </div>
+    </section>
+
+    <!-- 右：文档 -->
+    <section id="prdPanel" class="glass">
+      <div class="prd-head">
+        <div class="title"><span class="dot"></span><span id="docTitle">PRD 文档</span></div>
+        <div class="spacer"></div>
+        <div class="docseg" id="docSeg">
+          <button class="seg" data-doc="brd" title="商业需求文档 · 面向决策层，回答为什么值得做">BRD</button>
+          <button class="seg" data-doc="mrd" title="市场需求文档 · 面向产品与市场，回答凭什么赢">MRD</button>
+          <button class="seg on" data-doc="prd" title="产品需求文档 · 面向研发，回答怎么做">PRD</button>
+        </div>
+        <button class="btn primary" id="btnGen" disabled>✨ 生成 PRD</button>
+        <button class="btn" id="btnCopy" disabled>复制</button>
+        <button class="btn" id="btnMd" disabled>Markdown</button>
+        <button class="btn" id="btnWord" disabled>Word</button>
+        <button class="btn" id="btnPdf" disabled>PDF</button>
+      </div>
+      <div id="prdScroll">
+        <div id="prdEmpty">
+          <div class="big">📄</div>
+          <div class="t1"><span id="docEmptyTitle">PRD 文档</span>将在这里生成</div>
+          <div class="t2">
+            1️⃣ 在左侧描述你的产品想法<br>
+            2️⃣ AI 会逐步引导你补全 <code>产品名称</code> <code>目标用户</code> <code>痛点与需求</code> <code>核心解决方案</code> <code>核心交互逻辑</code><br>
+            3️⃣ 五项信息集齐后，选好文档类型并点击生成 —— 附带 Mermaid 流程图，可导出 MD / Word / PDF<br>
+            <span class="dochint"><b>BRD</b> 为什么值得做 · <b>MRD</b> 凭什么赢 · <b>PRD</b> 怎么做</span>
+          </div>
+        </div>
+        <div id="prdBody"></div>
+        <div id="genOverlay">
+          <div class="spinner"></div>
+          <div class="gt">AI 正在撰写 <span id="docGenTitle">PRD</span>，包含流程图…<br><br><b>内容较长，请耐心等待</b></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ================= 状态 ================= */
+const state = {
+  history: [],      // [{role:'user'|'assistant', content}]
+  info: {           // 新 5 要素模型
+    product_name: null,
+    target_users: null,
+    pain_points: [],
+    core_solution: [],
+    key_interaction_logic: null,
+    additional_info: "",
+  },
+  complete: false,
+  markdown: "",     // 生成的文档
+  busy: false,
+  docType: "prd",   // brd | mrd | prd
+};
+
+/* 文档类型配置：BRD 面向决策层，MRD 面向产品与市场，PRD 面向研发 */
+const DOC_META = {
+  brd: { label: "BRD", title: "BRD 文档", name: "商业需求文档" },
+  mrd: { label: "MRD", title: "MRD 文档", name: "市场需求文档" },
+  prd: { label: "PRD", title: "PRD 文档", name: "产品需求文档" },
+};
+const docMeta = () => DOC_META[state.docType] || DOC_META.prd;
+
+const $ = (s) => document.querySelector(s);
+const msgsEl = $("#msgs"), ipt = $("#ipt"), btnSend = $("#btnSend");
+
+/* ================= 工具 ================= */
+let toastT;
+function toast(msg, ok = true) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.style.border = ok ? "1px solid rgba(77,214,193,.5)" : "1px solid rgba(240,95,95,.6)";
+  t.classList.add("show");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+function scrollBottom() { msgsEl.scrollTop = msgsEl.scrollHeight; }
+
+function addMsg(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "ai");
+  if (role === "ai") {
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = "PRD 搭子";
+    d.appendChild(who);
+    // 支持多行（追问列表 / 五要素总结）
+    text.split("\n").forEach((line, i) => {
+      if (i) d.appendChild(document.createElement("br"));
+      d.appendChild(document.createTextNode(line));
+    });
+  } else {
+    d.textContent = text;
+  }
+  msgsEl.appendChild(d);
+  scrollBottom();
+}
+
+// 产品优化建议卡片
+function addSuggestion(text) {
+  if (!text) return;
+  const d = document.createElement("div");
+  d.className = "suggest";
+  d.textContent = "💡 搭子建议：" + text;
+  msgsEl.appendChild(d);
+  scrollBottom();
+}
+
+function addChips(options) {
+  if (!options || !options.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "chips";
+  options.forEach((o) => {
+    const c = document.createElement("button");
+    c.className = "chip";
+    c.textContent = o;
+    c.onclick = () => { ipt.value = o; send(); };
+    wrap.appendChild(c);
+  });
+  msgsEl.appendChild(wrap);
+  scrollBottom();
+}
+
+let typingEl = null;
+function showTyping() {
+  typingEl = document.createElement("div");
+  typingEl.className = "typing";
+  typingEl.innerHTML = "<i></i><i></i><i></i>";
+  msgsEl.appendChild(typingEl);
+  scrollBottom();
+}
+function hideTyping() { if (typingEl) { typingEl.remove(); typingEl = null; } }
+
+function updateBadges() {
+  document.querySelectorAll(".badge").forEach((b) => {
+    const v = state.info[b.dataset.k];
+    const has = Array.isArray(v)
+      ? v.some((x) => x && String(x).trim())
+      : !!(v && String(v).trim());
+    b.classList.toggle("on", has);
+  });
+}
+
+// 五要素汇总（信息齐备时展示）
+function summarizeInfo() {
+  const i = state.info;
+  const fmt = (v) => (Array.isArray(v) ? (v.filter(Boolean).join("；") || "—") : (v && String(v).trim()) || "—");
+  return (
+    "· 产品名称：" + fmt(i.product_name) +
+    "\n· 目标用户：" + fmt(i.target_users) +
+    "\n· 痛点与需求：" + fmt(i.pain_points) +
+    "\n· 核心解决方案：" + fmt(i.core_solution) +
+    "\n· 核心交互逻辑：" + fmt(i.key_interaction_logic)
+  );
+}
+
+function setBusy(b) {
+  state.busy = b;
+  btnSend.disabled = b;
+  ipt.disabled = b;
+}
+
+/* ================= 对话 ================= */
+/* ================= 请求基址自适应 =================
+   页面从 localhost:3000 打开 → 同源直连；
+   从 file:// 双击打开、或被预览面板/其它静态服务代理 → 自动回退到 3000 端口后端 */
+const API_BASE = (() => {
+  const { protocol, hostname, port } = location;
+  if (protocol === "file:") return "http://localhost:3000";
+  if (port === "3000" || port === "") return "";
+  return /^(localhost|127\.0\.0\.1|::1)$/.test(hostname) ? "http://localhost:3000" : "";
+})();
+
+async function apiPost(pathname, payload) {
+  const urls = [...new Set([
+    API_BASE + pathname,
+    "http://localhost:3000" + pathname,
+    "http://127.0.0.1:3000" + pathname,
+  ])];
+  let detail = "";
+  for (const u of urls) {
+    try {
+      const res = await fetch(u, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (e) {
+      detail = e.message;
+    }
+  }
+  throw new Error("连不上后端服务（请在 AI_prd 目录执行 node server.js）");
+}
+
+async function send() {
+  const text = ipt.value.trim();
+  if (!text || state.busy) return;
+  ipt.value = "";
+  ipt.style.height = "auto";
+
+  const prevHistory = state.history.slice(); // 本轮之前的记录（供后端消解指代）
+  state.history.push({ role: "user", content: text });
+  addMsg("user", text);
+  setBusy(true);
+  showTyping();
+
+  try {
+    const data = await apiPost("/api/chat", {
+      user_message: text,
+      collected_info: state.info,
+      history: prevHistory,
+    });
+    hideTyping();
+    if (!data.ok) throw new Error(data.error || "请求失败");
+
+    // 更新五要素槽位
+    state.info = data.extracted_info || state.info;
+
+    // 组织展示文本
+    let replyText;
+    if (data.is_complete) {
+      replyText = "太棒了，五要素已经集齐！📋\n\n" + summarizeInfo() +
+        "\n\n可以点击右上角「✨ 生成 " + docMeta().label + "」，我来为你撰写完整文档（含 Mermaid 流程图）；也可以先切到 BRD / MRD，从商业论证或市场论证开始。";
+    } else {
+      replyText = (data.clarification_questions || []).join("\n\n") || "继续聊聊你的想法吧～";
+    }
+    state.history.push({ role: "assistant", content: replyText });
+    addMsg("ai", replyText);
+    (data.suggestions || []).forEach(addSuggestion);
+    addChips(data.quick_options);
+    state.complete = !!data.is_complete;
+    updateBadges();
+
+    if (state.complete) {
+      $("#btnGen").disabled = false;
+      toast("需求信息已齐备，可以生成 " + docMeta().label + " 了 ✨");
+    }
+  } catch (e) {
+    hideTyping();
+    addMsg("ai", "出错了：" + e.message + "\n请稍后重试。");
+  } finally {
+    setBusy(false);
+    ipt.focus();
+  }
+}
+
+btnSend.onclick = send;
+ipt.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+ipt.addEventListener("input", () => {
+  ipt.style.height = "auto";
+  ipt.style.height = Math.min(ipt.scrollHeight, 110) + "px";
+});
+
+/* ================= PRD 渲染 ================= */
+mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose", fontFamily: "PingFang SC, sans-serif" });
+marked.setOptions({ breaks: false, gfm: true });
+
+function markdownToNodes(md) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = marked.parse(md);
+  // 把 mermaid 代码块换成可渲染节点
+  wrap.querySelectorAll("pre code.language-mermaid, code.language-mermaid").forEach((el) => {
+    const pre = el.closest("pre") || el;
+    const d = document.createElement("div");
+    d.className = "mermaid";
+    d.textContent = el.textContent;
+    pre.replaceWith(d);
+  });
+  return wrap;
+}
+
+async function renderPRD(md) {
+  const body = $("#prdBody");
+  body.innerHTML = "";
+  body.appendChild(markdownToNodes(md));
+  body.style.display = "block";
+  $("#prdEmpty").style.display = "none";
+  try {
+    await mermaid.run({ querySelector: "#prdBody .mermaid" });
+  } catch (e) {
+    console.warn("mermaid 渲染警告", e);
+  }
+  $("#prdScroll").scrollTop = 0;
+}
+
+/* ================= 文档类型切换 ================= */
+function applyDocType(key, silent) {
+  if (!DOC_META[key]) return;
+  state.docType = key;
+  const m = docMeta();
+  document.querySelectorAll("#docSeg .seg").forEach((b) => {
+    b.classList.toggle("on", b.dataset.doc === key);
+  });
+  $("#docTitle").textContent = m.title;
+  $("#docEmptyTitle").textContent = m.title;
+  $("#docGenTitle").textContent = m.label;
+  $("#btnGen").textContent = "✨ 生成 " + m.label;
+  if (!silent) toast("已切换到 " + m.label + "（" + m.name + "）");
+}
+
+document.querySelectorAll("#docSeg .seg").forEach((b) => {
+  b.onclick = () => applyDocType(b.dataset.doc);
+});
+
+$("#btnGen").onclick = async () => {
+  if (state.busy) return;
+  state.busy = true;
+  $("#btnGen").disabled = true;
+  $("#genOverlay").classList.add("on");
+  const label = docMeta().label;
+  try {
+    const data = await apiPost("/api/generate", {
+      history: state.history,
+      info: state.info,
+      doc_type: state.docType,
+    });
+    if (!data.ok) throw new Error(data.error || "生成失败");
+    state.markdown = data.markdown;
+    await renderPRD(state.markdown);
+    ["#btnCopy", "#btnMd", "#btnWord", "#btnPdf"].forEach((s) => ($(s).disabled = false));
+    toast(label + " 生成完成 🎉");
+  } catch (e) {
+    toast("生成失败：" + e.message, false);
+  } finally {
+    $("#genOverlay").classList.remove("on");
+    $("#btnGen").disabled = false;
+    state.busy = false;
+  }
+};
+
+/* ================= 导出 ================= */
+function safeName() {
+  const fallback = docMeta().label + "文档";
+  const raw = (state.info.product_name || fallback) + "-" + docMeta().label;
+  return raw.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40);
+}
+
+function download(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+$("#btnCopy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(state.markdown);
+    toast("已复制到剪贴板");
+  } catch {
+    toast("复制失败，请手动选择复制", false);
+  }
+};
+
+$("#btnMd").onclick = () => {
+  download(new Blob([state.markdown], { type: "text/markdown;charset=utf-8" }), safeName() + ".md");
+  toast("Markdown 已下载");
+};
+
+/* Word：HTML → .doc */
+$("#btnWord").onclick = () => {
+  const nodes = markdownToNodes(state.markdown);
+  // mermaid SVG 转 base64 图片（Word 兼容）
+  nodes.querySelectorAll(".mermaid").forEach((d) => {
+    const svg = d.querySelector("svg");
+    if (!svg) return;
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const b64 = btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg))));
+    const img = document.createElement("img");
+    img.src = "data:image/svg+xml;base64," + b64;
+    img.style.maxWidth = "100%";
+    d.innerHTML = "";
+    d.appendChild(img);
+  });
+  const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${docMeta().label}</title>
+<style>
+body{font-family:"微软雅黑",Arial;font-size:12pt;line-height:1.8;color:#222}
+h1{font-size:20pt;border-bottom:2px solid #7c6cf0;padding-bottom:8px}
+h2{font-size:15pt;color:#5a4bd6;margin-top:20px}
+h3{font-size:13pt}
+table{border-collapse:collapse;width:100%;margin:10px 0}
+th,td{border:1px solid #999;padding:6px 10px;font-size:10.5pt}
+th{background:#eee8ff}
+code{font-family:Consolas,monospace;background:#f4f2ff;padding:1px 4px}
+.mermaid{text-align:center}
+</style></head><body>${nodes.innerHTML}</body></html>`;
+  download(new Blob(["\ufeff" + html], { type: "application/msword" }), safeName() + ".doc");
+  toast("Word 文档已下载");
+};
+
+/* PDF：临时切换浅色主题后导出 */
+$("#btnPdf").onclick = async () => {
+  toast("正在导出 PDF…");
+  const body = $("#prdBody");
+  body.classList.add("print-light");
+  try {
+    await html2pdf().set({
+      margin: [10, 10, 12, 10],
+      filename: safeName() + ".pdf",
+      image: { type: "jpeg", quality: 0.96 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: 900 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+    }).from(body).save();
+    toast("PDF 已下载 🎉");
+  } catch (e) {
+    toast("PDF 导出失败：" + e.message, false);
+  } finally {
+    body.classList.remove("print-light");
+  }
+};
+
+/* ================= 初始化 ================= */
+applyDocType("prd", true);
+</script>
+</body>
+</html>

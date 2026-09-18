@@ -1,0 +1,13 @@
+{
+  "name": "doc-buddy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI 文档搭子 - 对话式引导生成 BRD / MRD / PRD",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

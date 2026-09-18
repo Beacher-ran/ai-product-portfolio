@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 密钥与本地配置（切勿提交真实 API Key）
+config.js
+.env
+.env.*
+!.env.example
+
+# 运行日志与测试输出
+logs/
+*.log
+*_test.txt
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.trae/
+.vscode/
+.idea/
